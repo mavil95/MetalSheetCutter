@@ -8,20 +8,15 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     this->setFixedSize(this->size());
     m_vObjects = new vector<Object>;
+    m_pCuttingWindow = new CuttingDialog();
 
     // create and connect Info Dialog
     m_pInfoWindow = new InfoDialog();
     connect(ui->HelpButton, SIGNAL(clicked()), m_pInfoWindow, SLOT(show()));
 
-    // create and connect Cutting Dialog
-    m_pCuttingWindow = new CuttingDialog();
-    //connect(ui->StartCuttingButton, SIGNAL(clicked()), this, SLOT(on_StartCuttingButton_clicked()));
-
     // Provide data to Cutting dialog
     connect(this, SIGNAL(send_SheetSize(int, int)), m_pCuttingWindow, SLOT(receive_SheetSize(int, int)));
-    connect(this, SIGNAL(send_ObjectVector(vector<Object>, int)), m_pCuttingWindow, SLOT(receive_ObjectVector(vector<Object>, int)));
-
-
+    connect(this, SIGNAL(send_ObjectVector(vector<Object>)), m_pCuttingWindow, SLOT(receive_ObjectVector(vector<Object>)));
 }
 
 MainWindow::~MainWindow()
@@ -33,6 +28,7 @@ void MainWindow::on_StartCuttingButton_clicked()
 {
     if (!m_pCuttingWindow->isVisible())
     {
+        // fill object vector from input widgets
         m_vObjects->clear();
         for (int i = 0; i < ui->FirstObjectCountSpinBox->value(); i++)
         {
@@ -49,16 +45,16 @@ void MainWindow::on_StartCuttingButton_clicked()
                                      ui->SecondObjectWidthSpinBox->value())));
         }
 
-        qDebug() << "m_vObjects->size() " << m_vObjects->size();
-        for (auto it = m_vObjects->begin(); it != m_vObjects->end(); it++)
-        {
-            qDebug() << "object width: " << it->width() << endl
-                     << "object length: " << it->height() << endl
-                     << "object area: " << it->getArea() << endl;
-        }
-
-        m_pCuttingWindow->show();
+        // send all required data to cutting window and show it
         emit send_SheetSize(ui->SheetLengthSpinBox->value(), ui->SheetWidthSpinBox->value());
-        emit send_ObjectVector(*m_vObjects, ui->FirstObjectCountSpinBox->value());
+        emit send_ObjectVector(*m_vObjects);
+        m_pCuttingWindow->show();
     }
+}
+
+void MainWindow::closeEvent(QCloseEvent *)
+{
+    delete m_pInfoWindow;
+    delete m_pCuttingWindow;
+    delete m_vObjects;
 }

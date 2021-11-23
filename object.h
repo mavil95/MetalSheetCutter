@@ -2,7 +2,6 @@
 #define OBJECT_H
 
 #include <QRect>
-#include <QLabel>
 
 class Object : QRect
 {
@@ -23,7 +22,6 @@ public:
         return (a > b); }
 
     friend class CuttingDialog;
-    friend class MainWindow;
 
 private:
     int area {0};

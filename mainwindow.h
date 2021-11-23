@@ -6,7 +6,6 @@
 #include <infodialog.h>
 #include <cuttingdialog.h>
 #include <object.h>
-#include <QPainter>
 
 using namespace std;
 
@@ -26,23 +25,20 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    friend class CuttingDialog;
-
 signals:
     void send_SheetSize(int legth, int width);
-    void send_ObjectVector(vector<Object> vector, int firstTypeCount);
+    void send_ObjectVector(vector<Object> vector);
 
 public slots:
     void on_StartCuttingButton_clicked();
 
-private slots:
-
 private:
+    void closeEvent(QCloseEvent *) override;
+
     Ui::MainWindow *ui;
     InfoDialog *m_pInfoWindow;
     CuttingDialog *m_pCuttingWindow;
     vector<Object> *m_vObjects;
-
 };
 
 #endif // MAINWINDOW_H

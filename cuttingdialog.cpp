@@ -1,8 +1,6 @@
 #include "cuttingdialog.h"
 #include "ui_cuttingdialog.h"
 
-
-
 CuttingDialog::CuttingDialog(QWidget *parent) :
     QDialog(parent),
     ui(new Ui::CuttingDialog)
@@ -13,17 +11,13 @@ CuttingDialog::CuttingDialog(QWidget *parent) :
     m_pScene = new QGraphicsScene(this);
     ui->graphicsView->setScene(m_pScene);
     m_vRects = new vector<QGraphicsRectItem *>;
-    m_vRectsSubgroup = new vector<vector<QGraphicsItemGroup *>>;
-    m_vRectsSubgroup->push_back(*new vector<QGraphicsItemGroup *>);
     m_sSheetTrueSize = new QSize;
     m_pMessage = new QMessageBox(this);
     m_pMessage->setDefaultButton(QMessageBox::Ok);
-    m_vObjectGroupDistributor = new vector<int>;
 
     m_pRects = new QGraphicsItemGroup;
     m_pRects->setParentItem(new QGraphicsRectItem);
     m_pScene->addItem(m_pRects);
-
 
     m_pSheetPixmap = new QPixmap;
     m_pSheetPixmap->load("D:/Programming/PROJECTS/QT/Metal_sheet_cutter/metal_sheet.jpg");
@@ -47,6 +41,17 @@ CuttingDialog::CuttingDialog(QWidget *parent) :
 CuttingDialog::~CuttingDialog()
 {
     delete ui;
+    delete m_pMetalSheet;
+    delete m_sSheetTrueSize;
+    delete m_pSheetPixmap;
+    delete sheetBrush;
+    delete pen;
+    delete objectBrush;
+    delete m_vObjects;
+    delete m_vRects;
+    delete m_pRects;
+    delete m_pMessage;
+    delete m_pScene;
 }
 
 void CuttingDialog::receive_SheetSize(int length, int width)
@@ -59,6 +64,7 @@ void CuttingDialog::receive_SheetSize(int length, int width)
     m_dScale = double(m_pMetalSheet->width()) / bigger;
     m_pMetalSheet->setFixedHeight(smaller * m_dScale);
 
+    // set dimension label text
     if (length == bigger)
     {
         ui->DimSheetLabel->setText("length");
@@ -70,119 +76,138 @@ void CuttingDialog::receive_SheetSize(int length, int width)
 
     // move interface
     ui->graphicsView->setFixedHeight(m_pMetalSheet->height() + 2);
-    this->setFixedHeight(40 /* start of sheet widget */ + m_pMetalSheet->height() /* sheet height */ + 60 /* place for buttons */);
-    ui->BackButton->move(ui->BackButton->pos().x(), 40 /* start of sheet widget */ + m_pMetalSheet->height() /* sheet height */ + 20);
-    ui->PlaceObjectButton->move(ui->PlaceObjectButton->pos().x(), 40 /* start of sheet widget */ + m_pMetalSheet->height() /* sheet height */ + 20);
+    int buttonsYpos = 40 /* start of sheet widget */ + m_pMetalSheet->height() /* sheet height */ + 20;
+    this->setFixedHeight(buttonsYpos + 40 /* place for buttons and bottom space */);
+    ui->BackButton->move(ui->BackButton->pos().x(), buttonsYpos);
+    ui->PlaceObjectButton->move(ui->PlaceObjectButton->pos().x(), buttonsYpos);
+    ui->ShowResultButton->move(ui->ShowResultButton->pos().x(), buttonsYpos);
 
+    // add metal sheet on scene
     m_pScene->addWidget(m_pMetalSheet);
-
-    qDebug() << m_pMetalSheet->width();
-    qDebug() << m_pMetalSheet->height();
-    qDebug() << m_dScale;
 }
 
-void CuttingDialog::receive_ObjectVector(vector<Object> vector, int firstTypeCount)
+void CuttingDialog::receive_ObjectVector(vector<Object> vector)
 {
+    // clear current object vector and copy a new one from main window
     m_vObjects->clear();
     for (auto it = vector.begin(); it != vector.end(); it++)
     {
         m_vObjects->push_back(*it);
     }
     sort(m_vObjects->begin(), m_vObjects->end());
-    for (auto it = m_vObjects->begin(); it != m_vObjects->end(); it++)
-    {
-        qDebug() << "object width+: " << it->width() << endl
-                 << "object length+: " << it->height() << endl
-                 << "object area+: " << it->getArea() << endl;
-    }
+
+    // set objects left
     m_nObjectsLeft = int(m_vObjects->size());
     ui->CountSpinBox->setValue(m_nObjectsLeft);
-    m_nFirstTypeCount = firstTypeCount;
-
 }
 
 void CuttingDialog::on_PlaceObjectButton_clicked()
 {
     if (m_nObjectsLeft)
     {
-        if (m_vObjects->at(m_nObjectsLeft - 1).height() > m_sSheetTrueSize->height() ||
-            m_vObjects->at(m_nObjectsLeft - 1).width() > m_sSheetTrueSize->width())
+        // check that object fit in the metal sheet
+        if (CURRENT_OBJECT.height() > m_sSheetTrueSize->height() ||
+            CURRENT_OBJECT.width() > m_sSheetTrueSize->width())
         {
-            qDebug() << "Warning";
-            m_pMessage->setText("This object doen't fit to the metall sheet! Proceed to the next object.");
-            m_pMessage->show();
+            showWarningMessage();
+        }
+
+        // move current object and place it, if it fits to the metal sheet
+        calculateNextPoint();
+        if (CURRENT_OBJECT.topRight().x() > m_pMetalSheet->width())
+        {
+            showWarningMessage();
+            CURRENT_OBJECT.moveTo(CURRENT_OBJECT.x() - CURRENT_OBJECT.width() * m_dScale,
+                                  CURRENT_OBJECT.y() - CURRENT_OBJECT.width() * m_dScale);
         }
         else
         {
-            qDebug() << "Drawing";
-
-            calculateNextPoint();
-            QRect CurRect(QPoint(m_vObjects->at(m_nObjectsLeft - 1).x(), m_vObjects->at(m_nObjectsLeft - 1).y()),
-                        QSize(m_vObjects->at(m_nObjectsLeft - 1).width() * m_dScale, m_vObjects->at(m_nObjectsLeft - 1).height() * m_dScale));
+            QRect CurRect(QPoint(CURRENT_OBJECT.x(), CURRENT_OBJECT.y()),
+                        QSize(CURRENT_OBJECT.width() * m_dScale, CURRENT_OBJECT.height() * m_dScale));
             m_vRects->push_back(m_pScene->addRect(CurRect, *pen, *objectBrush));
         }
+
+        // count down object left
         m_nObjectsLeft--;
         ui->CountSpinBox->setValue(m_nObjectsLeft);
+
+        // show result if last object was placed
         if (!m_nObjectsLeft)
         {
-            qDebug() << "Finish";
-            for (auto it = m_vRects->begin(); it != m_vRects->end(); it++)
-            {
-                m_pRects->addToGroup(*it);
-            }
-            QString resultString = "Finish of cutting process! You will spend ~ ";
-            resultString.push_back(QString::number(m_pRects->boundingRect().width() / m_dScale));
-            resultString.push_back(" linear centimeters of material.");
-            m_pMessage->setText(resultString);
-            m_pMessage->show();
-            for (auto it = m_vRects->begin(); it != m_vRects->end(); it++)
-            {
-                m_pRects->removeFromGroup(*it);
-            }
+            showResultMessage();
+            ui->ShowResultButton->setEnabled(true);
         }
     }
     else
     {
-        qDebug() << "No more objects";
         m_pMessage->setText("There is no more objects to place");
         m_pMessage->show();
     }
 }
 
+void CuttingDialog::on_ShowResultButton_clicked()
+{
+    showResultMessage();
+}
+
 void CuttingDialog::closeEvent(QCloseEvent *)
 {
-    qDebug() << "Closing";
     for (auto it = m_vRects->begin(); it != m_vRects->end(); it++)
     {
         m_pScene->removeItem(*it);
     }
     m_vRects->clear();
+    ui->ShowResultButton->setEnabled(false);
 }
 
 void CuttingDialog::calculateNextPoint()
 {
-    if (!m_vRects)
-        return;
+    /// This function moves current object to next available space
+    /// Available space defined by intersecting with another objects
+
+    for (int it = m_vObjects->size() - 1; it >= 0; it--)
+    {
+        if(it == m_nObjectsLeft - 1)
+        {
+            break;
+        }
+        QRect tempRect(m_vObjects->at(it));
+        tempRect.setHeight(tempRect.height() * m_dScale);
+        tempRect.setWidth(tempRect.width() * m_dScale);
+        while (CURRENT_OBJECT.intersects(tempRect))
+        {
+            if (CURRENT_OBJECT.y() + (CURRENT_OBJECT.height() * m_dScale) > m_pMetalSheet->height())
+            {
+                CURRENT_OBJECT.moveTo(CURRENT_OBJECT.x() + 1, 0);
+                calculateNextPoint();
+            }
+            else
+            {
+                CURRENT_OBJECT.moveTo(CURRENT_OBJECT.x(), CURRENT_OBJECT.y() + 1);
+            }
+        }
+    }
+}
+
+void CuttingDialog::showWarningMessage()
+{
+    m_pMessage->setText("This object doesn't fit to the metal sheet! Proceed to the next object.");
+    m_pMessage->show();
+}
+
+void CuttingDialog::showResultMessage()
+{
     for (auto it = m_vRects->begin(); it != m_vRects->end(); it++)
     {
         m_pRects->addToGroup(*it);
     }
-    qDebug() << "Bounding rect width: " << m_pRects->boundingRect().width();
-    qDebug() << "Bounding rect height: " << m_pRects->boundingRect().height();
-    if (m_pRects->boundingRect().height() + m_vObjects->at(m_nObjectsLeft - 1).height() > m_pMetalSheet->height())
-    {
-        m_vObjects->at(m_nObjectsLeft - 1).moveTo(m_pRects->boundingRect().width(), 0);
-    }
-    else
-    {
-        m_vObjects->at(m_nObjectsLeft - 1).moveTo(0, m_pRects->boundingRect().height());
-    }
-    qDebug() << "point x: " << m_vObjects->at(m_nObjectsLeft - 1).x();
-    qDebug() << "point y: " << m_vObjects->at(m_nObjectsLeft - 1).y();
+    QString resultString = "Finish of cutting process! You will spend ~ ";
+    resultString.push_back(QString::number(m_pRects->boundingRect().width() / m_dScale));
+    resultString.push_back(" linear centimeters of material.");
+    m_pMessage->setText(resultString);
+    m_pMessage->show();
     for (auto it = m_vRects->begin(); it != m_vRects->end(); it++)
     {
         m_pRects->removeFromGroup(*it);
     }
 }
-
-
